@@ -1,4 +1,4 @@
-from geweke_test import GewekeInterface
+from geweke import GewekeInterface
 import numpy as np
 import numpy.random as rn
 
@@ -53,6 +53,6 @@ class GammaPoissonVecModel(GewekeInterface):
 
 if __name__ == "__main__":
     gpm = GammaPoissonVecModel(N=5, T=5, shape=5.0, scale=1.0)
-    gpm.geweke_test(num_prior=1000, num_posterior=50000, skip=50)
-    assert len(gpm._generative_samples) == len(gpm._inferential_samples)
-    gpm.pp_plot_statistic(gpm.mean_param)
+    gpm.interactive_geweke_test(num_prior=20000, num_posterior=20000, skip=1, statistics=[gpm.mean_param, gpm.var_param])
+    # assert len(gpm._generative_samples) == len(gpm._inferential_samples)
+    # gpm.interactive_hist(gpm.mean_param)
