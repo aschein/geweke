@@ -4,21 +4,25 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
-from pp_plot import pp_plot
+# from pp_plot import pp_plot
 import os
-
-def newax():
-    return plt.figure().add_subplot(111)
+import time
 
 @contextmanager
-def plot(name, axes):
+def plot_fig(name, fig):
     plt.ion()
-    ax = axes[name]
-    ax.clear()
-    ax.set_title(name)
-    yield ax
-    ax.figure.canvas.show()
-    plt.show()
+    fig.suptitle(name)
+    for ax in fig.axes:
+        ax.clear()
+    yield fig.axes
+    fig.canvas.draw()
+
+def newfig():
+    plt.ion()
+    fig = plt.figure()
+    fig.add_subplot(211)
+    fig.add_subplot(212)
+    return fig
 
 class GewekeInterface:
     """Abstract interface that implements the Geweke test.
@@ -40,7 +44,7 @@ class GewekeInterface:
     def __init__(self):
         self._generative_samples = []
         self._inferential_samples = []
-        self._axes = defaultdict(newax)
+        self._figs = defaultdict(newfig)
 
     # ABSTRACT METHODS (to implement by inheriting class)
 
@@ -109,6 +113,7 @@ class GewekeInterface:
         for i in xrange(num_posterior):
             joint_sample = self.inferential_joint_sampler(joint_sample)
             # joint_sample = self.inferential_joint_sampler(None)
+            # joint_sample = self.generative_joint_sampler()
             if i % skip == 0:
                 inferential_joint_samples.append(joint_sample)
         self._generative_samples.extend(generative_joint_samples)
@@ -120,17 +125,17 @@ class GewekeInterface:
 
         joint_sample = None
         for i in xrange(1, num_posterior + 1):
+            start = time.time()
             joint_sample = self.inferential_joint_sampler(joint_sample)
             if i % skip == 0:
                 inferential_joint_samples.append(joint_sample)
-                # print i, len(inferential_joint_samples)
             
-            if i % 2 == 0:
+            if i % 10 == 0:
                 for statistic in statistics:
                     f_generative_samples = [statistic(s) for s in generative_joint_samples]
                     f_inferential_samples = [statistic(s) for s in inferential_joint_samples]
-                    self.interactive_hist(statistic.__name__, f_generative_samples, f_inferential_samples)
-                    self.interactive_pp(statistic.__name__, f_generative_samples, f_inferential_samples)
+                    self.interactive_plot(statistic.__name__, f_generative_samples, f_inferential_samples)
+            print '%f : time on iteration %d'%(time.time() - start, i)
         self.save_plots()
 
         self._generative_samples.extend(generative_joint_samples)
@@ -141,57 +146,25 @@ class GewekeInterface:
     def save_plots(self):
         if not os.path.isdir('geweke_output'):
             os.mkdir('geweke_output')
-        for name, ax in self._axes.iteritems():
-            ax.figure.canvas.draw()
-            plt.savefig('geweke_output/%s.png'%name)
+        for name, fig in self._figs.iteritems():
+            fig.savefig('geweke_output/%s.png'%name)
 
-    def interactive_hist(self, name, f_generative_samples, f_inferential_samples):
+    def interactive_plot(self, name, f_generative_samples, f_inferential_samples):
+        f_generative_samples = np.array(f_generative_samples)
+        f_inferential_samples = np.array(f_inferential_samples)
+
         lo = min(min(f_generative_samples), min(f_inferential_samples))
         hi = max(max(f_generative_samples), max(f_inferential_samples))
         bins = np.linspace(lo, hi, 100)
 
-        with plot('%s_hist'%name, self._axes) as ax:
-            ax.hist(f_generative_samples, bins, alpha=0.5)
-            ax.hist(f_inferential_samples, bins, alpha=0.5)
-            ax.set_title(name)
-
-    def interactive_pp(self, name, f_generative_samples, f_inferential_samples):
-        f_generative_samples = np.array(f_generative_samples)
-        f_inferential_samples = np.array(f_inferential_samples)
         f_inferential_samples.sort()
-
         generative_cdf = [np.mean(f_generative_samples < s) for s in f_inferential_samples]
         inferential_cdf = [np.mean(f_inferential_samples < s) for s in f_inferential_samples]
 
-        with plot('%s_pp'%name, self._axes) as ax:
-            ax.plot(generative_cdf, inferential_cdf, 'b*', lw=0.5)
-            ax.plot([-0.1, 1.1],[-0.1, 1.1],'g--', lw=1)
-            ax.set_title(name)
-            ax.set_xlabel('Generative')
-            ax.set_ylabel('Inferential')
-
-    def hist_statistic(self, statistic):
-        f_generative_samples = [statistic(s) for s in self._generative_samples]
-        f_inferential_samples = [statistic(s) for s in self._inferential_samples]
-        _, ax = plt.subplots(2, 1, sharex=True)
-        plt.sca(ax[0])
-        parms = dict(bins=20)
-        plt.hist(f_generative_samples, **parms)
-        plt.grid()
-        plt.title("Generative")
-        plt.sca(ax[1])
-        plt.hist(f_inferential_samples, **parms)
-        plt.grid()
-        plt.title("Inferential")
-        plt.show()
-
-    def pp_plot_statistic(self, statistic):
-        f_generative_samples = [statistic(s) for s in self._generative_samples]
-        f_inferential_samples = [statistic(s) for s in self._inferential_samples]
-        pp_plot(f_generative_samples, f_inferential_samples)
-
-    # def plot_statistic(self, statistic):
-    #     f_generative_samples = [statistic(s) for s in self._generative_samples]
-    #     f_inferential_samples = [statistic(s) for s in self._inferential_samples]
-    #     title = statistic.__name__
-    #     raise NotImplementedError
+        with plot_fig(name, self._figs[name]) as (ax1, ax2):
+            ax1.plot(generative_cdf, inferential_cdf, 'b*', lw=0.5)
+            ax1.plot([-0.1, 1.1],[-0.1, 1.1],'g--', lw=1)
+            # ax1.set_xlabel('Generative')
+            # ax1.set_ylabel('Inferential')
+            ax2.hist(f_generative_samples, bins, alpha=0.5)
+            ax2.hist(f_inferential_samples, bins, alpha=0.5)
